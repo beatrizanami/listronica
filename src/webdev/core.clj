@@ -78,15 +78,15 @@
     (assoc-in (handler req) [:headers "Server"] "BA List")))
 
 (def sim-methods
-  {"PUT" :put
+  {"PUT"    :put
    "DELETE" :delete})
 
 (defn wrap-simulated-methods [handler]
-     (fn [req]
-       (if-let [method (and (= :post (:request-method req))
-                            (sim-methods (get-in req [:params "_method"])))]
-         (handler (assoc req :request-method method))
-         (handler req))))
+  (fn [req]
+    (if-let [method (and (= :post (:request-method req))
+                         (sim-methods (get-in req [:params "_method"])))]
+      (handler (assoc req :request-method method))
+      (handler req))))
 
 (def app
   (wrap-server
@@ -108,3 +108,6 @@
   (jetty/run-jetty (wrap-reload #'app)
                    {:port (Integer. port)}))
 
+;; TODO
+;; Make homepage HTML, add a picture and show links to all GET routes
+;; Rework the system to support multiple lists and multiple items each
