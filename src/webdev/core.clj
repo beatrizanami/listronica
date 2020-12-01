@@ -1,9 +1,18 @@
 (ns webdev.core
   (:require [ring.adapter.jetty :as jetty]
             [ring.middleware.reload :refer [wrap-reload]]
-            [compojure.core :refer [defroutes GET]]
+            [ring.middleware.params :refer [wrap-params]]
+            [ring.middleware.resource :refer [wrap-resource]]
+            [ring.middleware.file-info :refer [wrap-file-info]]
+            [compojure.core :refer [defroutes ANY GET PUT POST DELETE]]
             [compojure.route :refer [not-found]]
-            [ring.handler.dump :refer [handle-dump]]))
+            [ring.handler.dump :refer [handle-dump]]
+            [webdev.item.model :as items]
+            [webdev.item.handler :as handle-index-items]))
+
+(def db (or
+          (System/getenv "DATABASE_URL")
+          "jdbc:postgresql://postgres:1234@postgres.local:5432/webdev"))
 
 (defn greet [req]
   {:status  200
@@ -45,20 +54,57 @@
        :body    "Unknown operation"
        :headers {}})))
 
-(defroutes app
+(defroutes routes
            (GET "/" [] greet)
            (GET "/goodbye" [] goodbye)
            (GET "/about" [] about)
-           (GET "/request" [] handle-dump)
+           (ANY "/request" [] handle-dump)
            (GET "/yo/:name" [] yo)
            (GET "/calc/:a/:op/:b" [] calc)
+
+           (GET "/items" [] handle-index-items/handle-index-items)
+           (POST "/items" [] handle-index-items/handle-create-item)
+           (DELETE "/items/:item-id" [] handle-index-items/handle-delete-item)
+           (PUT "/items/:item-id" [] handle-index-items/handle-update-item)
+
            (not-found "Page not found"))
 
+(defn wrap-db [handler]
+  (fn [req]
+    (handler (assoc req :webdev/db db))))
+
+(defn wrap-server [handler]
+  (fn [req]
+    (assoc-in (handler req) [:headers "Server"] "BA List")))
+
+(def sim-methods
+  {"PUT" :put
+   "DELETE" :delete})
+
+(defn wrap-simulated-methods [handler]
+     (fn [req]
+       (if-let [method (and (= :post (:request-method req))
+                            (sim-methods (get-in req [:params "_method"])))]
+         (handler (assoc req :request-method method))
+         (handler req))))
+
+(def app
+  (wrap-server
+    (wrap-file-info
+      (wrap-resource
+        (wrap-db
+          (wrap-params
+            (wrap-simulated-methods
+              routes)))
+        "static"))))
+
 (defn -main [port]
+  (items/create-table! db)
   (jetty/run-jetty app
                    {:port (Integer. port)}))
 
 (defn -dev-main [port]
+  (items/create-table! db)
   (jetty/run-jetty (wrap-reload #'app)
                    {:port (Integer. port)}))
 
